@@ -223,6 +223,9 @@ def main():
         sys.exit()
     signal.signal(signal.SIGINT, shutdown)
 
+    # additional logging info
+    logging.basicConfig(level=logging.INFO, filename='s3funnel-%s.log' % bucket)
+
     # Setup output logger
     output = logging.getLogger('output')
     output_handler = logging.StreamHandler(sys.stdout)
@@ -259,8 +262,6 @@ def main():
     funnel.shutdown()
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, filename='s3funnel.log')
-
     r = main()
     if r:
         sys.exit(r)
