@@ -36,11 +36,7 @@ class S3ToolBox(object):
     Container object for resources needed to access S3.
     This includes a connection to S3 and an instance of the bucket.
     """
-    def __init__(self, aws_key, aws_secret_key, secure):
-        self.aws_key = aws_key
-        self.aws_secret_key = aws_secret_key
-        self.secure = secure
-
+    def __init__(self):
         self.reset()
 
     def reset(self):
@@ -52,7 +48,7 @@ class S3ToolBox(object):
         if self.conn: return self.conn
 
         log.debug("Starting new S3 connection.")
-        self.conn = boto.connect_s3(self.aws_key, self.aws_secret_key, is_secure=self.secure)
+        self.conn = boto.connect_s3()
         return self.conn
 
     def get_bucket(self, name):
@@ -88,10 +84,7 @@ class S3Funnel(object):
     maxjobs [Default: numthreads * 2]
         Number of jobs to accept into the queue at a time (block if full)
     """
-    def __init__(self, aws_key=None, aws_secret_key=None, pool=None, **config):
-        self.aws_key = aws_key or config.get('aws_key')
-        self.aws_secret_key = aws_secret_key or config.get('aws_secret_key')
-
+    def __init__(self, pool=None, **config):
         self.config = config
         self.numthreads = config.get('numthreads', 5)
         self.maxjobs = config.get('maxjobs', self.numthreads*2)
@@ -101,7 +94,7 @@ class S3Funnel(object):
         self.conn = None
         self.buckets = {}
 
-        toolbox = S3ToolBox(self.aws_key, self.aws_secret_key, self.secure)
+        toolbox = S3ToolBox()
         self._get_conn = toolbox.get_conn
         self._get_bucket = toolbox.get_bucket
 
@@ -114,7 +107,7 @@ class S3Funnel(object):
         if self.pool: return self.pool
 
         def toolbox_factory():
-            return S3ToolBox(self.aws_key, self.aws_secret_key, self.secure)
+            return S3ToolBox()
         def worker_factory(job_queue):
             return workerpool.EquippedWorker(job_queue, toolbox_factory)
 
@@ -155,11 +148,14 @@ class S3Funnel(object):
 
         more_results = True
         k = None
-
+        count = 0
+        
         log.info("Listing keys from marker: %s" % marker)
         while more_results:
             try:
                 r = bucket.get_all_keys(marker=marker, prefix=prefix, delimiter=delimiter)
+                count += len(r)
+                log.info('Processed %d items' % count)
                 for k in r:
                     yield k.name
                 if k:
@@ -173,21 +169,34 @@ class S3Funnel(object):
 
         log.info("Done listing bucket: %s" % name)
 
-    def delete(self, bucket, ikeys, retry=5, **config):
+    def delete(self, bucket, ikeys, chunkSize=1000, retry=5, **config):
         """
         Given an iterator of key names, delete these keys from the current bucket.
         Return a list of failed keys (if any).
         """
         # Setup local config for this request
+        keys = []
         c = {}
         c.update(config)
         c['retry'] = retry
 
         failed = Queue()
         pool = self._get_pool()
-        for k in ikeys:
-            j = DeleteJob(bucket, k, failed, c)
-            pool.put(j)
+        
+        try:
+          while(True):
+            keys.append(ikeys.next())
+          
+            if( (len(keys) % chunkSize) == 0 ):
+              log.info('Reached chunk size of keys')
+              pool.put( DeleteJob(bucket, keys, failed, c) )
+              keys = []
+            
+        except StopIteration, e:
+          log.info('Iteration stopped')
+          pool.put( DeleteJob(bucket, keys, failed, c) )
+          keys = []
+          
         pool.join()
 
         return collapse_queue(failed)

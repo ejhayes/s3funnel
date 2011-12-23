@@ -157,18 +157,21 @@ class PutJob(Job):
             self.failed.put(e)
 
 class DeleteJob(Job):
-    "Delete the given key from S3."
-    def __init__(self, bucket, key, failed, config={}):
+    "Delete the given keys from S3."
+    def __init__(self, bucket, keys, failed, config={}):
         self.bucket = bucket
-        self.key = key
+        self.keys = keys
+        log.debug("MULTIDELETE OF KEYS")
+        log.debug(keys)
         self.failed = failed
         self.retries = config.get('retry', 5)
 
     def _do(self, toolbox):
         for i in xrange(self.retries):
             try:
-                k = toolbox.get_bucket(self.bucket).delete_key(self.key)
-                log.info("Deleted: %s" % self.key)
+                k = toolbox.get_bucket(self.bucket).delete_keys(self.keys)
+                log.debug(k)
+                log.info("Deleted: %d keys" % len(self.keys))
                 return
             except S3ResponseError, e:
                 log.warning("Connection lost, reconnecting and retrying...")
@@ -179,13 +182,13 @@ class DeleteJob(Job):
                 log.warning("Caught exception: %r.\nRetrying..." % e)
                 time.sleep((2 ** i) / 4.0) # Exponential backoff
 
-        log.error("Failed to delete: %s" % self.key)
+        log.error("Failed to delete: %d keys" % len(self.keys))
 
     def run(self, toolbox):
         try:
             self._do(toolbox)
         except JobError, e:
-            self.failed.put(self.key)
+            self.failed.put(self.keys)
         except Exception, e:
             self.failed.put(e)
             

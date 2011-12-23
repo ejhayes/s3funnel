@@ -19,9 +19,10 @@ This tool uses the workerpool for multithreading and boto for access to the Amaz
       packages=find_packages(exclude=['ez_setup', 'examples', 'tests']),
       include_package_data=True,
       zip_safe=False,
+      dependency_links = ['http://github.com/davbo/boto/tarball/master#egg=boto-davbo-github-master'],
       install_requires=[
           # -*- Extra requirements: -*-
-          'boto','workerpool >= 0.9.2',
+          'boto>=davbo-github-master','workerpool >= 0.9.2',
       ],
       entry_points="""
       # -*- Entry points: -*-
